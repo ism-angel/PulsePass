@@ -38,7 +38,7 @@ public class Venue {
         this.active = active;
     }
 
-    protected Venue(){}
+    public Venue(){}
 
     public Long getId() {
         return id;
