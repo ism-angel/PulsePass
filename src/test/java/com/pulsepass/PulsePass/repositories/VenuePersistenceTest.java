@@ -1,6 +1,7 @@
 package com.pulsepass.PulsePass.repositories;
 
 import com.pulsepass.PulsePass.domain.Venue;
+import com.pulsepass.PulsePass.repository.VenueRepository;   // <-- nuevo
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -10,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class VenuePersistenceTest extends BaseRepositoryTest {
 
     @Autowired
-    private VenueRepositories venueRepository;
+    private VenueRepository venueRepository;
 
     @Test
     void debePersistirYRecuperarVenuePorCodigo_FR_VEN_001() {

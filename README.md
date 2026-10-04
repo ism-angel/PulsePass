@@ -1,33 +1,105 @@
 # PulsePass
 
-Sistema backend de gestion y venta de entradas para eventos y conciertos.
+Sistema backend de gestión y venta de entradas para eventos y conciertos.
 
 ## Sobre el Proyecto
-PulsePass es una API desarrollada en Spring Boot orientada a la gestion robusta de recintos (venues), eventos y control de accesos. Utiliza arquitectura limpia, control de versiones de base de datos automatizado y pruebas de integracion con contenedores reales.
+PulsePass es una API desarrollada en Spring Boot orientada a la gestión de recintos (venues), eventos, artistas, usuarios y tickets. Utiliza una arquitectura por capas, control de versiones de base de datos automatizado y pruebas de integración con contenedores reales.
 
-## Tecnologias y Dependencias
+## Tecnologías y Dependencias
 * Java 21
-* Spring Boot (Spring Data JPA)
-* PostgreSQL (Base de datos relacional)
-* Flyway (Control de migraciones y esquemas de BD)
-* Testcontainers (Pruebas de integracion sobre contenedores Docker reales)
-* Maven (Gestion de construccion y dependencias)
+* Spring Boot 4 (Spring Data JPA)
+* PostgreSQL (base de datos relacional)
+* Flyway (control de migraciones y esquemas de BD)
+* MapStruct (mapeo Entity → DTO)
+* Lombok
+* Testcontainers (pruebas de integración sobre contenedores Docker reales)
+* Maven (gestión de construcción y dependencias)
 
-## Arquitectura y Estructura del Codigo
-El proyecto organiza sus componentes bajo una estructura modular y limpia:
-* com.pulsepass.PulsePass.domain / entities: Modelos de negocio y entidades JPA mapeadas (ej. Venue).
-* com.pulsepass.PulsePass.repositories: Interfaces de persistencia con Spring Data JPA.
-* src/main/resources/db/migration: Scripts de migracion SQL gestionados por Flyway.
-* src/test/java: Pruebas automatizadas del sistema y repositorios.
+## Arquitectura y Estructura del Código
+El proyecto sigue una separación por capas:
+
+```
+Controller (futuro)
+   ↓
+DTOs (records)
+   ↓
+Services
+   ↓
+Repositories
+   ↓
+Entities
+   ↓
+PostgreSQL
+```
+
+Estructura de paquetes bajo `com.pulsepass.PulsePass`:
+
+* `domain`: entidades JPA y enums (`Venue`, `Event`, `Artist`, `User`, `UserProfile`, `Ticket`, `EventCategory`, `EventStatus`, `TicketType`, `TicketStatus`).
+* `repository`: interfaces de persistencia con Spring Data JPA.
+* `dto.request`: `CreateEventRequest`, `RegisterUserRequest`, `PurchaseTicketRequest`.
+* `dto.response`: `VenueResponse`, `ArtistResponse`, `EventResponse`, `EventSummaryResponse`, `UserResponse`, `TicketResponse`.
+* `mapper`: mappers MapStruct (`VenueMapper`, `ArtistMapper`, `EventMapper`, `UserMapper`, `TicketMapper`).
+* `exception`: `ResourceNotFoundException`, `BusinessRuleException`, `DuplicateResourceException`.
+* `service`: interfaces de servicio y `TicketPriceCalculator`.
+* `service.impl`: implementaciones `@Service`.
+* `src/main/resources/db/migration`: scripts de migración SQL gestionados por Flyway.
+* `src/test/java`: pruebas automatizadas.
+
+## Capa de Servicios
+Responsable de aplicar las reglas de negocio, coordinar repositories, controlar transacciones, convertir entidades a DTOs y producir errores de dominio claros.
+
+Principios aplicados:
+* Los contratos públicos no exponen entidades JPA; solo DTOs.
+* Inyección de dependencias por constructor (campos `final`).
+* Cada servicio tiene interfaz e implementación.
+* Escrituras con `@Transactional` y lecturas con `@Transactional(readOnly = true)`.
+* Los repositories solo acceden a datos; las reglas viven en los servicios.
+
+| Servicio | Responsabilidad |
+|---|---|
+| `VenueService` | Consultar venues por código y listar venues activos |
+| `ArtistService` | Consultar artistas por id o nombre artístico y listar activos |
+| `EventService` | Crear, consultar, publicar eventos y asociar artistas |
+| `UserService` | Registrar usuarios con su perfil y consultarlos por email o username |
+| `TicketService` | Comprar, consultar, cancelar y marcar tickets como usados |
+
+### Excepciones
+* `ResourceNotFoundException`: el recurso solicitado no existe.
+* `DuplicateResourceException`: conflicto de unicidad.
+* `BusinessRuleException`: el recurso existe, pero la operación no es válida.
+
+### Reglas principales
+* **Eventos:** código único, venue existente y activo, fecha futura, edad mínima >= 0 y estado inicial `DRAFT`. Solo se publica un evento `DRAFT` con fecha futura y venue activo. No se agregan artistas a eventos `CANCELLED` o `FINISHED`, ni se repiten.
+* **Usuarios:** username y email únicos (el email sin distinguir mayúsculas), `birthDate` no futura, usuario nuevo activo, y `User` y `UserProfile` se crean en la misma transacción.
+* **Compra de tickets:** usuario existente y activo, evento existente y `PUBLISHED`, fecha futura, edad mínima evaluada en la fecha del evento y capacidad disponible. La compra es atómica: si cumple la capacidad total, el evento pasa a `SOLD_OUT` en la misma transacción.
+* **Precio:** se calcula en el sistema con `BigDecimal` mediante `TicketPriceCalculator`; nunca se toma del cliente ni puede ser negativo.
+* **Cancelación y uso:** solo un ticket `PAID` puede pasar a `CANCELLED` (antes de la fecha del evento) o a `USED`.
+
+### Ciclos de estado
+```
+Evento:  DRAFT → PUBLISHED → SOLD_OUT → FINISHED
+         DRAFT → CANCELLED
+         PUBLISHED → CANCELLED
+
+Ticket:  PAID → USED
+         PAID → CANCELLED
+```
 
 ## Requisitos Previos
-Para compilar y ejecutar el proyecto de forma local, asegurate de tener instalado:
+Para compilar y ejecutar el proyecto de forma local, asegúrate de tener instalado:
 1. Java JDK 21 configurado en tu entorno.
-2. Docker Desktop activo (es indispensable si deseas correr las pruebas de integracion que levantan PostgreSQL mediante Testcontainers).
-3. Maven (puedes usar el comando integrado).
+2. Docker Desktop activo (indispensable para las pruebas de integración que levantan PostgreSQL mediante Testcontainers).
+3. Maven (puedes usar el wrapper integrado: `./mvnw`).
 
-## Ejecucion de Pruebas
-Para limpiar, compilar el codigo y ejecutar toda la suite de pruebas unitarias e de integracion, abre una terminal en la raiz del proyecto y ejecuta:
+## Ejecución de Pruebas
+Para limpiar, compilar el código y ejecutar la suite de pruebas, abre una terminal en la raíz del proyecto y ejecuta:
 
 ```bash
 mvn clean test
+```
+
+## Estado del Proyecto
+* Capa de persistencia: completa.
+* Capa de servicios: implementada (interfaces, implementaciones, DTOs, mappers, excepciones y reglas de negocio).
+* Pruebas unitarias de la capa de servicios (JUnit 5, Mockito, AssertJ): pendientes.
+* Controllers REST: fuera del alcance actual.

@@ -12,4 +12,9 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     // FR-USR-001: recuperar un usuario por su username (único)
     Optional<User> findByUsername(String username);
+
+    // Sección 32: validaciones de unicidad
+    boolean existsByEmailIgnoreCase(String email);
+
+    boolean existsByUsername(String username);
 }

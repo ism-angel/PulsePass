@@ -62,4 +62,7 @@ public interface EventRepository extends JpaRepository<Event, Long> {
     List<Event> findRecommendedEvents(@Param("fromDate") LocalDateTime fromDate,
                                       @Param("city") String city,
                                       @Param("artistText") String artistText);
+
+    // Sección 32: validar unicidad del eventCode
+    boolean existsByEventCode(String eventCode);
 }
