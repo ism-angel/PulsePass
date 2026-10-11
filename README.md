@@ -19,7 +19,7 @@ PulsePass es una API desarrollada en Spring Boot orientada a la gestión de reci
 El proyecto sigue una separación por capas:
 
 ```
-Controller (futuro)
+Controller (REST)
    ↓
 DTOs (records)
    ↓
@@ -37,9 +37,10 @@ Estructura de paquetes bajo `com.pulsepass.PulsePass`:
 * `domain`: entidades JPA y enums (`Venue`, `Event`, `Artist`, `User`, `UserProfile`, `Ticket`, `EventCategory`, `EventStatus`, `TicketType`, `TicketStatus`).
 * `repository`: interfaces de persistencia con Spring Data JPA.
 * `dto.request`: `CreateEventRequest`, `RegisterUserRequest`, `PurchaseTicketRequest`.
-* `dto.response`: `VenueResponse`, `ArtistResponse`, `EventResponse`, `EventSummaryResponse`, `UserResponse`, `TicketResponse`.
+* `dto.response`: `VenueResponse`, `ArtistResponse`, `EventResponse`, `EventSummaryResponse`, `UserResponse`, `TicketResponse`, `ErrorResponse`.
 * `mapper`: mappers MapStruct (`VenueMapper`, `ArtistMapper`, `EventMapper`, `UserMapper`, `TicketMapper`).
-* `exception`: `ResourceNotFoundException`, `BusinessRuleException`, `DuplicateResourceException`.
+* `controller`: controllers REST (`VenueController`, `EventController`, `ArtistController`, `UserController`, `TicketController`).
+* `exception`: `ResourceNotFoundException`, `BusinessRuleException`, `DuplicateResourceException` y `GlobalExceptionHandler` (`@RestControllerAdvice`).
 * `service`: interfaces de servicio y `TicketPriceCalculator`.
 * `service.impl`: implementaciones `@Service`.
 * `src/main/resources/db/migration`: scripts de migración SQL gestionados por Flyway.
@@ -85,6 +86,50 @@ Ticket:  PAID → USED
          PAID → CANCELLED
 ```
 
+## Capa de Controladores REST
+Los controllers solo traducen HTTP a llamadas de Service: no contienen reglas de negocio, no usan repositories y responden exclusivamente DTOs mediante `ResponseEntity`. La validación estructural (Bean Validation con `@Valid`) ocurre antes de invocar el Service; las reglas de negocio permanecen en la capa de servicios.
+
+### Endpoints principales
+| Método | Endpoint | Éxito |
+|---|---|---|
+| GET | `/api/venues/{code}` | 200 |
+| GET | `/api/venues/active` | 200 |
+| POST | `/api/events` | 201 |
+| GET | `/api/events/{eventCode}` | 200 |
+| GET | `/api/events/published` | 200 |
+| PATCH | `/api/events/{eventCode}/publish` | 200 |
+| POST | `/api/events/{eventCode}/artists/{artistId}` | 200 |
+| GET | `/api/events/by-artist?stageName=...` | 200 |
+| GET | `/api/artists/{id}` | 200 |
+| GET | `/api/artists/by-stage-name?stageName=...` | 200 |
+| GET | `/api/artists/active` | 200 |
+| POST | `/api/users` | 201 |
+| GET | `/api/users/by-email?email=...` | 200 |
+| GET | `/api/users/by-username?username=...` | 200 |
+| POST | `/api/tickets` | 201 |
+| GET | `/api/tickets/{ticketCode}` | 200 |
+| GET | `/api/tickets/by-user?email=...` | 200 |
+| GET | `/api/events/{eventCode}/tickets/paid` | 200 |
+| PATCH | `/api/tickets/{ticketCode}/cancel` | 200 |
+| PATCH | `/api/tickets/{ticketCode}/use` | 200 |
+
+### Contrato de errores
+Todos los errores usan `ErrorResponse` (`timestamp`, `status`, `error`, `message`, `details`):
+
+| Condición | HTTP |
+|---|---|
+| Bean Validation (`MethodArgumentNotValidException`) o JSON mal formado | 400 |
+| `ResourceNotFoundException` | 404 |
+| `DuplicateResourceException` / `BusinessRuleException` | 409 |
+| Error inesperado | 500 |
+
+### Pruebas de controllers
+Usan `@WebMvcTest`, `MockMvc` y `@MockitoBean`: no levantan PostgreSQL ni Docker. Para ejecutar solo estas pruebas:
+
+```bash
+./mvnw test -Dtest='*ControllerTest'
+```
+
 ## Requisitos Previos
 Para compilar y ejecutar el proyecto de forma local, asegúrate de tener instalado:
 1. Java JDK 21 configurado en tu entorno.
@@ -102,4 +147,4 @@ mvn clean test
 * Capa de persistencia: completa.
 * Capa de servicios: implementada (interfaces, implementaciones, DTOs, mappers, excepciones y reglas de negocio).
 * Pruebas unitarias de la capa de servicios (JUnit 5, Mockito, AssertJ): pendientes.
-* Controllers REST: fuera del alcance actual.
+* Capa de controladores REST: implementada (5 controllers, `GlobalExceptionHandler`, `ErrorResponse` y pruebas `@WebMvcTest`).
