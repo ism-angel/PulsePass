@@ -7,6 +7,7 @@ import com.pulsepass.PulsePass.domain.EventStatus;
 import com.pulsepass.PulsePass.domain.Venue;
 import com.pulsepass.PulsePass.dto.request.CreateEventRequest;
 import com.pulsepass.PulsePass.dto.response.EventResponse;
+import com.pulsepass.PulsePass.dto.response.EventSummaryResponse;
 import com.pulsepass.PulsePass.exception.BusinessRuleException;
 import com.pulsepass.PulsePass.exception.DuplicateResourceException;
 import com.pulsepass.PulsePass.exception.ResourceNotFoundException;
@@ -14,6 +15,7 @@ import com.pulsepass.PulsePass.mapper.EventMapper;
 import com.pulsepass.PulsePass.repository.ArtistRepository;
 import com.pulsepass.PulsePass.repository.EventRepository;
 import com.pulsepass.PulsePass.repository.VenueRepository;
+import com.pulsepass.PulsePass.service.AuthorizationService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -22,6 +24,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -51,6 +54,11 @@ class EventServiceImplTest {
 
     @Mock
     private EventMapper eventMapper;
+
+    // Fase 4: EventServiceImpl ahora lo recibe por constructor.
+    // Sin este @Mock, @InjectMocks le pasaría null => NullPointerException.
+    @Mock
+    private AuthorizationService authorizationService;
 
     @InjectMocks
     private EventServiceImpl eventService;
@@ -223,6 +231,80 @@ class EventServiceImplTest {
         verify(eventRepository, never()).save(any(Event.class));
     }
 
+    // ---------- Fase 4: visibilidad de borradores (FR-SEC-EVT-02 / EVT-06) ----------
+
+    // T-SEC-017 — anónimo/USER no ve un borrador: 404, igual que si no existiera
+    @Test
+    void noDebeExponerEventoBorradorAQuienNoEsStaff_T_SEC_017() {
+        // ARRANGE
+        Event draft = event(EventStatus.DRAFT);
+        when(eventRepository.findByEventCode(EVENT_CODE)).thenReturn(Optional.of(draft));
+        when(authorizationService.canViewUnpublishedEvents()).thenReturn(false);
+
+        // ACT + ASSERT
+        assertThatThrownBy(() -> eventService.findByCode(EVENT_CODE))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("Event not found: " + EVENT_CODE);
+
+        verify(eventMapper, never()).toResponse(any(Event.class));
+    }
+
+    // STAFF/ADMIN sí ven el borrador
+    @Test
+    void debeMostrarEventoBorradorAStaffOAdmin() {
+        // ARRANGE
+        Event draft = event(EventStatus.DRAFT);
+        EventResponse expected = response(EventStatus.DRAFT);
+        when(eventRepository.findByEventCode(EVENT_CODE)).thenReturn(Optional.of(draft));
+        when(authorizationService.canViewUnpublishedEvents()).thenReturn(true);
+        when(eventMapper.toResponse(draft)).thenReturn(expected);
+
+        // ACT
+        EventResponse result = eventService.findByCode(EVENT_CODE);
+
+        // ASSERT
+        assertThat(result).isEqualTo(expected);
+    }
+
+    // FR-SEC-EVT-06 — búsqueda pública por artista: solo PUBLISHED
+    @Test
+    void busquedaPorArtistaSinPrivilegios_soloDevuelvePublicados() {
+        // ARRANGE
+        Event published = event(EventStatus.PUBLISHED);
+        Event draft = new Event("DRAFT-2026", "Borrador secreto", EventCategory.MUSIC,
+                EventStatus.DRAFT, FUTURE_DATE, venue(true));
+        EventSummaryResponse publishedSummary = summary(EventStatus.PUBLISHED);
+        when(eventRepository.findEventsByArtistStageName("Solar Beat")).thenReturn(List.of(published, draft));
+        when(authorizationService.canViewUnpublishedEvents()).thenReturn(false);
+        when(eventMapper.toSummary(published)).thenReturn(publishedSummary);
+
+        // ACT
+        List<EventSummaryResponse> result = eventService.findByArtist("Solar Beat");
+
+        // ASSERT
+        assertThat(result).containsExactly(publishedSummary);
+        verify(eventMapper, never()).toSummary(draft);
+    }
+
+    // FR-SEC-EVT-06 — STAFF/ADMIN ven todos los estados
+    @Test
+    void busquedaPorArtistaConPrivilegios_devuelveTodos() {
+        // ARRANGE
+        Event published = event(EventStatus.PUBLISHED);
+        Event draft = new Event("DRAFT-2026", "Borrador secreto", EventCategory.MUSIC,
+                EventStatus.DRAFT, FUTURE_DATE, venue(true));
+        when(eventRepository.findEventsByArtistStageName("Solar Beat")).thenReturn(List.of(published, draft));
+        when(authorizationService.canViewUnpublishedEvents()).thenReturn(true);
+        when(eventMapper.toSummary(published)).thenReturn(summary(EventStatus.PUBLISHED));
+        when(eventMapper.toSummary(draft)).thenReturn(summary(EventStatus.DRAFT));
+
+        // ACT
+        List<EventSummaryResponse> result = eventService.findByArtist("Solar Beat");
+
+        // ASSERT
+        assertThat(result).hasSize(2);
+    }
+
     // ---------- datos de prueba (escenario de la sección 47) ----------
 
     private Venue venue(boolean active) {
@@ -244,5 +326,10 @@ class EventServiceImplTest {
         return new EventResponse(1L, EVENT_CODE, "Caribbean Music Fest 2026",
                 "Festival de música del Caribe", EventCategory.MUSIC, status, FUTURE_DATE,
                 18, VENUE_CODE, "Marina Convention Center", Set.of());
+    }
+
+    private EventSummaryResponse summary(EventStatus status) {
+        return new EventSummaryResponse(1L, EVENT_CODE, "Caribbean Music Fest 2026",
+                EventCategory.MUSIC, status, FUTURE_DATE, "Marina Convention Center");
     }
 }

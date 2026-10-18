@@ -12,21 +12,25 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import com.pulsepass.PulsePass.service.AuthService;
 
 @RestController
 @RequestMapping("/api/users")
 public class UserController {
 
     private final UserService userService;
+    private final AuthService authService;   // NUEVO
 
-    public UserController(UserService userService) {
+    public UserController(UserService userService, AuthService authService) {
         this.userService = userService;
+        this.authService = authService;
     }
 
-    // FR-CTRLUSR-001
+    // FR-CTRLUSR-001 — misma URL, mismo 201 y mismo UserResponse.
+    // Fase 4: delega en AuthService para crear usuario + credencial + rol de forma atómica (§9.3)
     @PostMapping
     public ResponseEntity<UserResponse> register(@Valid @RequestBody RegisterUserRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(userService.register(request));
+        return ResponseEntity.status(HttpStatus.CREATED).body(authService.register(request));
     }
 
     // FR-CTRLUSR-002

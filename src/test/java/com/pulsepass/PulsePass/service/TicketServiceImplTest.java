@@ -17,6 +17,7 @@ import com.pulsepass.PulsePass.mapper.TicketMapper;
 import com.pulsepass.PulsePass.repository.EventRepository;
 import com.pulsepass.PulsePass.repository.TicketRepository;
 import com.pulsepass.PulsePass.repository.UserRepository;
+import com.pulsepass.PulsePass.service.AuthorizationService;
 import com.pulsepass.PulsePass.service.TicketPriceCalculator;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -38,6 +39,10 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import org.springframework.security.access.AccessDeniedException;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class TicketServiceImplTest {
@@ -64,6 +69,9 @@ class TicketServiceImplTest {
 
     @Mock
     private TicketPriceCalculator priceCalculator;
+
+    @Mock
+    private AuthorizationService authorizationService;
 
     @InjectMocks
     private TicketServiceImpl ticketService;
@@ -320,4 +328,49 @@ class TicketServiceImplTest {
         return new TicketResponse(1L, TICKET_CODE, TicketType.VIP, VIP_PRICE, status,
                 LocalDateTime.now(), "andrea@email.com", EVENT_CODE, "Caribbean Music Fest 2026");
     }
+
+    // ---------- Seguridad: propiedad (anti-IDOR) ----------
+
+    // T-SEC-010 / UC-SEC-05 — compra con email ajeno: 403 y 0 tickets
+    @Test
+    void noDebeCrearTicketConEmailAjeno_T_SEC_010() {
+        when(userRepository.findByEmailIgnoreCase("carlos@email.com"))
+                .thenReturn(Optional.of(new User("carlos", "carlos@email.com")));
+        doThrow(new AccessDeniedException("Access denied")).when(authorizationService).assertSelf(any());
+
+        assertThatThrownBy(() -> ticketService.purchase(
+                new PurchaseTicketRequest("carlos@email.com", "CMF-2026", TicketType.GENERAL)))
+                .isInstanceOf(AccessDeniedException.class);
+
+        verify(ticketRepository, never()).save(any(Ticket.class));
+        verifyNoInteractions(eventRepository);   // ni siquiera se evaluaron reglas de negocio
+    }
+
+    // T-SEC-009 / UC-SEC-06 — ticket ajeno no se devuelve
+    @Test
+    void noDebeDevolverTicketAjeno_T_SEC_009() {
+        Ticket ticket = mock(Ticket.class);
+        when(ticketRepository.findByTicketCode("TKT-CARLOS")).thenReturn(Optional.of(ticket));
+        doThrow(new AccessDeniedException("Access denied")).when(authorizationService).assertCanReadTicket(ticket);
+
+        assertThatThrownBy(() -> ticketService.findByCode("TKT-CARLOS"))
+                .isInstanceOf(AccessDeniedException.class);
+
+        verify(ticketMapper, never()).toResponse(any());
+    }
+
+    // FR-SEC-TKT-05 — cancelar ticket ajeno: se autoriza ANTES de mutar estado
+    @Test
+    void noDebeCancelarTicketAjenoNiCambiarEstado() {
+        Ticket ticket = mock(Ticket.class);
+        when(ticketRepository.findByTicketCode("TKT-CARLOS")).thenReturn(Optional.of(ticket));
+        doThrow(new AccessDeniedException("Access denied")).when(authorizationService).assertCanCancelTicket(ticket);
+
+        assertThatThrownBy(() -> ticketService.cancel("TKT-CARLOS"))
+                .isInstanceOf(AccessDeniedException.class);
+
+        verify(ticket, never()).setStatus(any());
+        verify(ticketRepository, never()).save(any(Ticket.class));
+    }
+
 }

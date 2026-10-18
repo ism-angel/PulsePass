@@ -13,6 +13,9 @@ import com.pulsepass.PulsePass.service.UserService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.pulsepass.PulsePass.service.AuthorizationService;
+import java.util.Optional;
+
 import java.time.LocalDate;
 
 @Service
@@ -20,10 +23,14 @@ public class UserServiceImpl implements UserService {
 
     private final UserRepository userRepository;
     private final UserMapper userMapper;
+    private final AuthorizationService authorizationService;   // NUEVO
 
-    public UserServiceImpl(UserRepository userRepository, UserMapper userMapper) {
+    public UserServiceImpl(UserRepository userRepository,
+                           UserMapper userMapper,
+                           AuthorizationService authorizationService) {
         this.userRepository = userRepository;
         this.userMapper = userMapper;
+        this.authorizationService = authorizationService;
     }
 
     // BR-USER-004: User y UserProfile se crean en la misma transacción
@@ -61,8 +68,10 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional(readOnly = true)
     public UserResponse findByEmail(String email) {
-        return userRepository
-                .findByEmailIgnoreCase(email)
+        Optional<User> user = userRepository.findByEmailIgnoreCase(email);
+        // FR-SEC-USR-02 — propio usuario o ADMIN
+        authorizationService.assertSelfOrAdmin(user);
+        return user
                 .map(userMapper::toResponse)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + email));
     }
@@ -70,8 +79,10 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional(readOnly = true)
     public UserResponse findByUsername(String username) {
-        return userRepository
-                .findByUsername(username)
+        Optional<User> user = userRepository.findByUsername(username);
+        // FR-SEC-USR-03 — propio usuario o ADMIN
+        authorizationService.assertSelfOrAdmin(user);
+        return user
                 .map(userMapper::toResponse)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + username));
     }

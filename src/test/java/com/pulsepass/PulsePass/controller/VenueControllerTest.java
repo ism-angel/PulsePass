@@ -18,8 +18,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import com.pulsepass.PulsePass.security.WithSecurityLayer;
+import static com.pulsepass.PulsePass.security.SecurityTestSupport.*;
 
 @WebMvcTest(VenueController.class)
+@WithSecurityLayer
 class VenueControllerTest {
 
     @Autowired

@@ -7,6 +7,7 @@ import com.pulsepass.PulsePass.exception.BusinessRuleException;
 import com.pulsepass.PulsePass.exception.DuplicateResourceException;
 import com.pulsepass.PulsePass.mapper.UserMapper;
 import com.pulsepass.PulsePass.repository.UserRepository;
+import com.pulsepass.PulsePass.service.AuthorizationService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -35,6 +36,9 @@ class UserServiceImplTest {
 
     @Mock
     private UserMapper userMapper;
+
+    @Mock
+    private AuthorizationService authorizationService;
 
     @InjectMocks
     private UserServiceImpl userService;
@@ -109,7 +113,7 @@ class UserServiceImplTest {
 
     private RegisterUserRequest request(LocalDate birthDate) {
         return new RegisterUserRequest(USERNAME, EMAIL, "Andrea", "Gómez",
-                "3001234567", "Santa Marta", birthDate);
+                "3001234567", "Santa Marta", birthDate, "UnaFraseSeguraLarga2026!");
     }
 
     private UserResponse response() {

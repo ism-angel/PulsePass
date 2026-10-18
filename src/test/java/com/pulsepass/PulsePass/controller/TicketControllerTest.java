@@ -28,8 +28,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import com.pulsepass.PulsePass.security.WithSecurityLayer;
+import static com.pulsepass.PulsePass.security.SecurityTestSupport.*;
 
 @WebMvcTest(TicketController.class)
+@WithSecurityLayer
 class TicketControllerTest {
 
     private static final String TICKET_CODE = "TKT-0001";
@@ -61,6 +64,7 @@ class TicketControllerTest {
         when(ticketService.purchase(any(PurchaseTicketRequest.class))).thenReturn(ticket(TicketStatus.PAID));
 
         mockMvc.perform(post("/api/tickets")
+                        .with(asUser())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(VALID_REQUEST))
                 .andExpect(status().isCreated())
@@ -86,6 +90,7 @@ class TicketControllerTest {
                 """;
 
         mockMvc.perform(post("/api/tickets")
+                        .with(asUser())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(invalidRequest))
                 .andExpect(status().isBadRequest())
@@ -105,6 +110,7 @@ class TicketControllerTest {
         String unknownType = VALID_REQUEST.replace("GENERAL", "PLATINUM");
 
         mockMvc.perform(post("/api/tickets")
+                        .with(asUser())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(unknownType))
                 .andExpect(status().isBadRequest())
@@ -120,6 +126,7 @@ class TicketControllerTest {
                 .thenThrow(new ResourceNotFoundException("User not found: andrea@example.com"));
 
         mockMvc.perform(post("/api/tickets")
+                        .with(asUser())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(VALID_REQUEST))
                 .andExpect(status().isNotFound())
@@ -137,6 +144,7 @@ class TicketControllerTest {
                 .thenThrow(new BusinessRuleException("User does not meet minimum age."));
 
         mockMvc.perform(post("/api/tickets")
+                        .with(asUser())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(VALID_REQUEST))
                 .andExpect(status().isConflict())
@@ -155,6 +163,7 @@ class TicketControllerTest {
                 .thenThrow(new IllegalStateException("connection pool exhausted: jdbc:postgresql://..."));
 
         mockMvc.perform(post("/api/tickets")
+                        .with(asUser())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(VALID_REQUEST))
                 .andExpect(status().isInternalServerError())
@@ -170,7 +179,8 @@ class TicketControllerTest {
     void findByCode_whenTicketExists_returns200() throws Exception {
         when(ticketService.findByCode(TICKET_CODE)).thenReturn(ticket(TicketStatus.PAID));
 
-        mockMvc.perform(get("/api/tickets/{ticketCode}", TICKET_CODE))
+        mockMvc.perform(get("/api/tickets/{ticketCode}", TICKET_CODE)
+                        .with(asUser()))
                 .andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.ticketCode").value(TICKET_CODE))
@@ -185,7 +195,8 @@ class TicketControllerTest {
         when(ticketService.findByCode("TKT-XXXX"))
                 .thenThrow(new ResourceNotFoundException("Ticket not found: TKT-XXXX"));
 
-        mockMvc.perform(get("/api/tickets/{ticketCode}", "TKT-XXXX"))
+        mockMvc.perform(get("/api/tickets/{ticketCode}", "TKT-XXXX")
+                        .with(asUser()))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.message").value("Ticket not found: TKT-XXXX"));
 
@@ -198,7 +209,9 @@ class TicketControllerTest {
         when(ticketService.findByUserEmail("andrea@example.com"))
                 .thenReturn(List.of(ticket(TicketStatus.PAID)));
 
-        mockMvc.perform(get("/api/tickets/by-user").param("email", "andrea@example.com"))
+        mockMvc.perform(get("/api/tickets/by-user")
+                        .with(asUser())
+                        .param("email", "andrea@example.com"))
                 .andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.length()").value(1))
@@ -207,13 +220,14 @@ class TicketControllerTest {
         verify(ticketService).findByUserEmail("andrea@example.com");
     }
 
-    // TEST-CTRL-TKT-007
+    // TEST-CTRL-TKT-007 (Requiere STAFF)
     @Test
     void findPaidTicketsByEvent_returns200WithPaidTickets() throws Exception {
         when(ticketService.findPaidTicketsByEvent("CMF-2026"))
                 .thenReturn(List.of(ticket(TicketStatus.PAID)));
 
-        mockMvc.perform(get("/api/events/{eventCode}/tickets/paid", "CMF-2026"))
+        mockMvc.perform(get("/api/events/{eventCode}/tickets/paid", "CMF-2026")
+                        .with(asStaff()))
                 .andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.length()").value(1))
@@ -228,7 +242,8 @@ class TicketControllerTest {
     void cancel_whenTicketIsPaid_returns200() throws Exception {
         when(ticketService.cancel(TICKET_CODE)).thenReturn(ticket(TicketStatus.CANCELLED));
 
-        mockMvc.perform(patch("/api/tickets/{ticketCode}/cancel", TICKET_CODE))
+        mockMvc.perform(patch("/api/tickets/{ticketCode}/cancel", TICKET_CODE)
+                        .with(asUser()))
                 .andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.ticketCode").value(TICKET_CODE))
@@ -243,7 +258,8 @@ class TicketControllerTest {
         when(ticketService.cancel(TICKET_CODE))
                 .thenThrow(new BusinessRuleException("Ticket cannot be cancelled. Current status: USED"));
 
-        mockMvc.perform(patch("/api/tickets/{ticketCode}/cancel", TICKET_CODE))
+        mockMvc.perform(patch("/api/tickets/{ticketCode}/cancel", TICKET_CODE)
+                        .with(asUser()))
                 .andExpect(status().isConflict())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.status").value(409))
@@ -252,12 +268,13 @@ class TicketControllerTest {
         verify(ticketService).cancel(TICKET_CODE);
     }
 
-    // TEST-CTRL-TKT-010 — AC-CTRL013
+    // TEST-CTRL-TKT-010 — AC-CTRL013 (Requiere STAFF)
     @Test
     void markAsUsed_whenTicketIsPaid_returns200() throws Exception {
         when(ticketService.markAsUsed(TICKET_CODE)).thenReturn(ticket(TicketStatus.USED));
 
-        mockMvc.perform(patch("/api/tickets/{ticketCode}/use", TICKET_CODE))
+        mockMvc.perform(patch("/api/tickets/{ticketCode}/use", TICKET_CODE)
+                        .with(asStaff()))
                 .andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.ticketCode").value(TICKET_CODE))
@@ -266,13 +283,14 @@ class TicketControllerTest {
         verify(ticketService).markAsUsed(TICKET_CODE);
     }
 
-    // TEST-CTRL-TKT-011 — AC-CTRL014
+    // TEST-CTRL-TKT-011 — AC-CTRL014 (Requiere STAFF)
     @Test
     void markAsUsed_whenTicketIsCancelled_returns409() throws Exception {
         when(ticketService.markAsUsed(TICKET_CODE))
                 .thenThrow(new BusinessRuleException("A CANCELLED ticket cannot be used."));
 
-        mockMvc.perform(patch("/api/tickets/{ticketCode}/use", TICKET_CODE))
+        mockMvc.perform(patch("/api/tickets/{ticketCode}/use", TICKET_CODE)
+                        .with(asStaff()))
                 .andExpect(status().isConflict())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.status").value(409))

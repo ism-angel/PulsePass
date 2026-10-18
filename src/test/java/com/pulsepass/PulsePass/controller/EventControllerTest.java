@@ -31,8 +31,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import com.pulsepass.PulsePass.security.WithSecurityLayer;
+import static com.pulsepass.PulsePass.security.SecurityTestSupport.*;
 
 @WebMvcTest(EventController.class)
+@WithSecurityLayer                    // NUEVO: carga TU SecurityConfig real
 class EventControllerTest {
 
     private static final LocalDateTime EVENT_DATE = LocalDateTime.of(2026, 12, 15, 20, 0);
@@ -75,6 +78,7 @@ class EventControllerTest {
                 .thenReturn(event(EventStatus.DRAFT, Set.of()));
 
         mockMvc.perform(post("/api/events")
+                        .with(asAdmin())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(VALID_REQUEST))
                 .andExpect(status().isCreated())
@@ -101,6 +105,7 @@ class EventControllerTest {
                 """;
 
         mockMvc.perform(post("/api/events")
+                        .with(asAdmin())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(invalidRequest))
                 .andExpect(status().isBadRequest())
@@ -121,6 +126,7 @@ class EventControllerTest {
         String negativeAgeRequest = VALID_REQUEST.replace("\"minimumAge\": 18", "\"minimumAge\": -1");
 
         mockMvc.perform(post("/api/events")
+                        .with(asAdmin())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(negativeAgeRequest))
                 .andExpect(status().isBadRequest())
@@ -134,6 +140,7 @@ class EventControllerTest {
     @Test
     void create_withMalformedJson_returns400AndDoesNotCallService() throws Exception {
         mockMvc.perform(post("/api/events")
+                        .with(asAdmin())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{ \"eventCode\": "))
                 .andExpect(status().isBadRequest())
@@ -151,6 +158,7 @@ class EventControllerTest {
                 .thenThrow(new DuplicateResourceException("Event already exists: CMF-2026"));
 
         mockMvc.perform(post("/api/events")
+                        .with(asAdmin())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(VALID_REQUEST))
                 .andExpect(status().isConflict())
@@ -158,7 +166,7 @@ class EventControllerTest {
                 .andExpect(jsonPath("$.message").value("Event already exists: CMF-2026"));
     }
 
-    // TEST-CTRL-EVT-003
+    // TEST-CTRL-EVT-003 (Público: no lleva .with())
     @Test
     void findByCode_whenEventExists_returns200() throws Exception {
         when(eventService.findByCode("CMF-2026")).thenReturn(event(EventStatus.DRAFT, Set.of()));
@@ -174,7 +182,7 @@ class EventControllerTest {
         verify(eventService).findByCode("CMF-2026");
     }
 
-    // TEST-CTRL-EVT-004
+    // TEST-CTRL-EVT-004 (Público: no lleva .with())
     @Test
     void findByCode_whenEventDoesNotExist_returns404() throws Exception {
         when(eventService.findByCode("NOPE"))
@@ -189,7 +197,7 @@ class EventControllerTest {
         verify(eventService).findByCode("NOPE");
     }
 
-    // TEST-CTRL-EVT-005
+    // TEST-CTRL-EVT-005 (Público: no lleva .with())
     @Test
     void findPublishedEvents_returns200WithSummaries() throws Exception {
         when(eventService.findPublishedEvents()).thenReturn(List.of(summary()));
@@ -210,7 +218,8 @@ class EventControllerTest {
     void publish_whenTransitionIsValid_returns200() throws Exception {
         when(eventService.publish("CMF-2026")).thenReturn(event(EventStatus.PUBLISHED, Set.of()));
 
-        mockMvc.perform(patch("/api/events/{eventCode}/publish", "CMF-2026"))
+        mockMvc.perform(patch("/api/events/{eventCode}/publish", "CMF-2026")
+                        .with(asAdmin()))
                 .andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.eventCode").value("CMF-2026"))
@@ -226,7 +235,8 @@ class EventControllerTest {
                 .thenThrow(new BusinessRuleException(
                         "Only DRAFT events can be published. Current status: PUBLISHED"));
 
-        mockMvc.perform(patch("/api/events/{eventCode}/publish", "CMF-2026"))
+        mockMvc.perform(patch("/api/events/{eventCode}/publish", "CMF-2026")
+                        .with(asAdmin()))
                 .andExpect(status().isConflict())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.status").value(409))
@@ -244,7 +254,8 @@ class EventControllerTest {
         when(eventService.addArtist("CMF-2026", 1L))
                 .thenReturn(event(EventStatus.DRAFT, Set.of(solarBeat)));
 
-        mockMvc.perform(post("/api/events/{eventCode}/artists/{artistId}", "CMF-2026", 1L))
+        mockMvc.perform(post("/api/events/{eventCode}/artists/{artistId}", "CMF-2026", 1L)
+                        .with(asAdmin()))
                 .andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.eventCode").value("CMF-2026"))
@@ -261,7 +272,8 @@ class EventControllerTest {
                 .thenThrow(new DuplicateResourceException(
                         "Artist Solar Beat is already associated with event CMF-2026"));
 
-        mockMvc.perform(post("/api/events/{eventCode}/artists/{artistId}", "CMF-2026", 1L))
+        mockMvc.perform(post("/api/events/{eventCode}/artists/{artistId}", "CMF-2026", 1L)
+                        .with(asAdmin()))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.status").value(409));
 
@@ -274,13 +286,14 @@ class EventControllerTest {
         when(eventService.addArtist("CMF-2026", 2L))
                 .thenThrow(new BusinessRuleException("Cannot add artists to an event with status CANCELLED"));
 
-        mockMvc.perform(post("/api/events/{eventCode}/artists/{artistId}", "CMF-2026", 2L))
+        mockMvc.perform(post("/api/events/{eventCode}/artists/{artistId}", "CMF-2026", 2L)
+                        .with(asAdmin()))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message")
                         .value("Cannot add artists to an event with status CANCELLED"));
     }
 
-    // TEST-CTRL-EVT-009
+    // TEST-CTRL-EVT-009 (Público: no lleva .with())
     @Test
     void findByArtist_returns200WithSummaries() throws Exception {
         when(eventService.findByArtist("Solar Beat")).thenReturn(List.of(summary()));
