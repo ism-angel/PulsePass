@@ -1,0 +1,8 @@
+# Perfil "test": clave EXCLUSIVA de pruebas (PRD §14.2). Nunca usar en otro ambiente.
+pulsepass:
+  security:
+    jwt:
+      issuer: pulsepass-api-test
+      # Base64 de "pulsepass-test-only-secret-not-for-prod!!" (41 bytes)
+      secret-base64: cHVsc2VwYXNzLXRlc3Qtb25seS1zZWNyZXQtbm90LWZvci1wcm9kISE=
+      access-token-ttl: PT15M
