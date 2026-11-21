@@ -18,6 +18,9 @@ import com.pulsepass.PulsePass.service.TicketService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.pulsepass.PulsePass.service.AuthorizationService;
+import java.util.Optional;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.Period;
@@ -27,31 +30,40 @@ import java.util.UUID;
 @Service
 public class TicketServiceImpl implements TicketService {
 
+
+
     private final TicketRepository ticketRepository;
     private final UserRepository userRepository;
     private final EventRepository eventRepository;
     private final TicketMapper ticketMapper;
     private final TicketPriceCalculator priceCalculator;
+    private final AuthorizationService authorizationService;
 
     public TicketServiceImpl(TicketRepository ticketRepository,
                              UserRepository userRepository,
                              EventRepository eventRepository,
                              TicketMapper ticketMapper,
-                             TicketPriceCalculator priceCalculator) {
+                             TicketPriceCalculator priceCalculator,
+                             AuthorizationService authorizationService) {
         this.ticketRepository = ticketRepository;
         this.userRepository = userRepository;
         this.eventRepository = eventRepository;
         this.ticketMapper = ticketMapper;
         this.priceCalculator = priceCalculator;
+        this.authorizationService = authorizationService;
     }
 
     @Override
     @Transactional
     public TicketResponse purchase(PurchaseTicketRequest request) {
-        // BR-TICKET-001 — Usuario existente
-        User user = userRepository
-                .findByEmailIgnoreCase(request.userEmail())
-                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + request.userEmail()));
+        // FR-SEC-TKT-01 — el userEmail del DTO debe pertenecer al principal (UC-SEC-05).
+        // Se verifica ANTES de cualquier regla de negocio: si es ajeno, 403 y 0 tickets creados.
+        Optional<User> requestedUser = userRepository.findByEmailIgnoreCase(request.userEmail());
+        authorizationService.assertSelf(requestedUser);
+
+        // BR-TICKET-001 — Usuario existente (garantizado por la verificación anterior)
+        User user = requestedUser.orElseThrow(
+                () -> new ResourceNotFoundException("User not found: " + request.userEmail()));
 
         // BR-TICKET-002 — Usuario activo
         if (!user.isActive()) {
@@ -120,18 +132,27 @@ public class TicketServiceImpl implements TicketService {
         return ticketMapper.toResponse(saved);
     }
 
+    // FindByCode
     @Override
     @Transactional(readOnly = true)
     public TicketResponse findByCode(String ticketCode) {
-        return ticketRepository
+        Ticket ticket = ticketRepository
                 .findByTicketCode(ticketCode)
-                .map(ticketMapper::toResponse)
                 .orElseThrow(() -> new ResourceNotFoundException("Ticket not found: " + ticketCode));
+
+        // FR-SEC-TKT-02 — propietario o STAFF/ADMIN; nunca basta conocer el ticketCode
+        authorizationService.assertCanReadTicket(ticket);
+
+        return ticketMapper.toResponse(ticket);
     }
 
+    // FindByUserEmail
     @Override
     @Transactional(readOnly = true)
     public List<TicketResponse> findByUserEmail(String email) {
+        // FR-SEC-TKT-03 — propietario o ADMIN, comparando por ID persistente
+        authorizationService.assertSelfOrAdmin(userRepository.findByEmailIgnoreCase(email));
+
         return ticketRepository
                 .findByUserEmailIgnoreCaseOrderByPurchaseDateDesc(email)
                 .stream()
@@ -156,6 +177,9 @@ public class TicketServiceImpl implements TicketService {
         Ticket ticket = ticketRepository
                 .findByTicketCode(ticketCode)
                 .orElseThrow(() -> new ResourceNotFoundException("Ticket not found: " + ticketCode));
+
+        // FR-SEC-TKT-05 — autorización ANTES de cualquier validación o mutación (§11.1)
+        authorizationService.assertCanCancelTicket(ticket);          // ← debe ir AQUÍ
 
         // BR-TICKET-011 — No puede cancelarse USED ni CANCELLED
         if (ticket.getStatus() == TicketStatus.USED || ticket.getStatus() == TicketStatus.CANCELLED) {
@@ -182,9 +206,13 @@ public class TicketServiceImpl implements TicketService {
     @Override
     @Transactional
     public TicketResponse markAsUsed(String ticketCode) {
+        // cancel
         Ticket ticket = ticketRepository
                 .findByTicketCode(ticketCode)
                 .orElseThrow(() -> new ResourceNotFoundException("Ticket not found: " + ticketCode));
+
+        // FR-SEC-TKT-05 — autorización ANTES de mutar estado (§11.1)
+        authorizationService.assertCanCancelTicket(ticket);
 
         // BR-TICKET-014 — Un ticket CANCELLED nunca puede utilizarse
         if (ticket.getStatus() == TicketStatus.CANCELLED) {
@@ -200,4 +228,6 @@ public class TicketServiceImpl implements TicketService {
 
         return ticketMapper.toResponse(ticketRepository.save(ticket));
     }
+
+
 }

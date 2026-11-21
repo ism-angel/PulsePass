@@ -14,6 +14,7 @@ import com.pulsepass.PulsePass.mapper.EventMapper;
 import com.pulsepass.PulsePass.repository.ArtistRepository;
 import com.pulsepass.PulsePass.repository.EventRepository;
 import com.pulsepass.PulsePass.repository.VenueRepository;
+import com.pulsepass.PulsePass.service.AuthorizationService;
 import com.pulsepass.PulsePass.service.EventService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,15 +29,18 @@ public class EventServiceImpl implements EventService {
     private final VenueRepository venueRepository;
     private final ArtistRepository artistRepository;
     private final EventMapper eventMapper;
+    private final AuthorizationService authorizationService;
 
     public EventServiceImpl(EventRepository eventRepository,
                             VenueRepository venueRepository,
                             ArtistRepository artistRepository,
-                            EventMapper eventMapper) {
+                            EventMapper eventMapper,
+                            AuthorizationService authorizationService) {
         this.eventRepository = eventRepository;
         this.venueRepository = venueRepository;
         this.artistRepository = artistRepository;
         this.eventMapper = eventMapper;
+        this.authorizationService = authorizationService;
     }
 
     @Override
@@ -85,10 +89,16 @@ public class EventServiceImpl implements EventService {
     @Override
     @Transactional(readOnly = true)
     public EventResponse findByCode(String eventCode) {
-        return eventRepository
+        Event event = eventRepository
                 .findByEventCode(eventCode)
-                .map(eventMapper::toResponse)
                 .orElseThrow(() -> new ResourceNotFoundException("Event not found: " + eventCode));
+
+        // FR-SEC-EVT-02 — un no publicado se responde IGUAL que uno inexistente (404),
+        // para no revelar siquiera que el borrador existe (T-SEC-017)
+        if (event.getStatus() != EventStatus.PUBLISHED && !authorizationService.canViewUnpublishedEvents()) {
+            throw new ResourceNotFoundException("Event not found: " + eventCode);
+        }
+        return eventMapper.toResponse(event);
     }
 
     @Override
@@ -165,9 +175,13 @@ public class EventServiceImpl implements EventService {
     @Override
     @Transactional(readOnly = true)
     public List<EventSummaryResponse> findByArtist(String stageName) {
+        boolean privileged = authorizationService.canViewUnpublishedEvents();
+
         return eventRepository
                 .findEventsByArtistStageName(stageName)
                 .stream()
+                // FR-SEC-EVT-06 — público: solo PUBLISHED; STAFF/ADMIN ven todos
+                .filter(event -> privileged || event.getStatus() == EventStatus.PUBLISHED)
                 .map(eventMapper::toSummary)
                 .toList();
     }
